@@ -114,6 +114,10 @@
     openF: "any",
     cards: {},
     home: null,
+    myHome: null,
+    habitual: null,
+    ref: null,
+    tripO: null,
     histCache: new Map(),
     ev: { minKw: 0, conns: [], parking: false, sort: "distance", raw: [], filtered: [], meta: null, tiles: new Map(), stats: null },
     maps: { main: null, route: null, mainLayer: null, routeLayer: null }
@@ -143,7 +147,8 @@
     calendar: '<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
     route: '<circle cx="6.5" cy="6.5" r="2.2"/><circle cx="17.5" cy="17.5" r="2.2"/><path d="M8.4 7.8C12 8 14 10.5 14 13.5V15c0 1.2.8 2.5 3.3 2.5"/>',
     check: '<path d="m5 12.5 4.2 4.2L19 7"/>',
-    chevron: '<path d="m9.5 6 6 6-6 6"/>'
+    chevron: '<path d="m9.5 6 6 6-6 6"/>',
+    home: '<path d="M4 11.2 12 4.5l8 6.7"/><path d="M6.2 9.6v9.9h11.6V9.6"/><path d="M10 19.5v-5h4v5"/>'
   };
   function icon(name, size = 18, cls = "") {
     const svg = document.createElementNS(SVGNS, "svg");
@@ -509,8 +514,13 @@ function loadLS(key, fallback) {
     if (state.mode === "ev") { applyEvFilters(); return; }
     const fuel = fuelOf();
     const origin = state.origin;
-    let rows = state.raw.map((s) => enrich(s, origin)).filter((s) => s.price != null && s.lat != null);
-    if (state.onlyPublic) rows = rows.filter((s) => (s.raw["Tipo Venta"] || "P") === "P");
+    let all = state.raw.map((s) => enrich(s, origin)).filter((s) => s.price != null && s.lat != null);
+    if (state.onlyPublic) all = all.filter((s) => (s.raw["Tipo Venta"] || "P") === "P");
+    const tripO = tripOrigin();
+    const ref = computeRef(all, tripO);
+    state.tripO = tripO;
+    state.ref = ref;
+    let rows = all;
     if (state.onlyFavs) rows = rows.filter((s) => state.favs.includes(s.id));
     if (origin && state.radius) rows = rows.filter((s) => s.dist != null && s.dist <= state.radius);
     if (state.openF === "now") rows = rows.filter((s) => openStatus(s.raw["Horario"]).open === true);
@@ -527,11 +537,9 @@ function loadLS(key, fallback) {
       s.fill = s.price * tank;
       s.saveAvg = avg != null ? avg * tank - s.fill : null;
       s.saveMax = max != null ? max * tank - s.fill : null;
-      s.detourKm = s.dist != null ? s.dist * 2 : null;
-      s.detourCost = s.detourKm != null ? (s.detourKm * cons / 100) * s.price : null;
-      s.net = s.saveAvg != null && s.detourCost != null ? s.saveAvg - s.detourCost : s.saveAvg;
+      computeNet(s, ref, tripO);
       s.isBest = min != null && s.price === min;
-      s.tag = null;
+      s.tag = s.isHabitual ? { cls: "hab", text: "Habitual" } : null;
     }
     // Etiquetas: una por tarjeta como mucho
     if (rows.length > 1) {
@@ -552,6 +560,7 @@ function loadLS(key, fallback) {
     updateFiltersLabel();
     renderList();
     renderMap();
+    ensureRoad(tripO, rows, ref && ref.s);
   }
 
   /* ——— render list ——— */
@@ -629,7 +638,7 @@ function loadLS(key, fallback) {
   function stationCard(s, opts = {}) {
     const raw = s.raw;
     const card = el("article", {
-      class: "card" + (s.isBest ? " is-best" : ""),
+      class: "card" + (s.isBest ? " is-best" : "") + (s.isHabitual && !opts.along ? " is-hab" : ""),
       role: "button",
       tabindex: "0"
     });
@@ -671,11 +680,20 @@ function loadLS(key, fallback) {
 
     if (!opts.skipTank && s.fill != null) {
       const net = s.net;
-      card.append(el("div", { class: "card-costs" },
-        costCell("Depósito", fmtEuro(s.fill, 0), "amb"),
-        costCell("Ahorro neto", net == null ? "—" : (net >= 0.5 ? "+" + fmtEuro(net, 0) : net <= -0.5 ? fmtEuro(net, 0) : "0 €"), net == null ? "neutral" : net >= 0.5 ? "good" : net <= -0.5 ? "bad" : "neutral"),
-        costCell("Desvío", s.detourKm != null ? fmtKm(s.detourKm) : "—", "neutral")
-      ));
+      if (opts.along || !s.netInfo) {
+        card.append(el("div", { class: "card-costs" },
+          costCell("Depósito", fmtEuro(s.fill, 0), "amb"),
+          costCell("Vs. media", net == null ? "—" : (net >= 0.5 ? "+" + fmtEuro(net, 0) : net <= -0.5 ? "−" + fmtEuro(-net, 0) : "0 €"), net == null ? "neutral" : net >= 0.5 ? "good" : net <= -0.5 ? "bad" : "neutral"),
+          costCell("Desvío", s.detourKm != null ? fmtKm(s.detourKm) : "—", "neutral")
+        ));
+      } else {
+        const nv = netView(s);
+        card.append(el("div", { class: "card-costs" },
+          costCell("Depósito", fmtEuro(s.fill, 0), "amb"),
+          costCell(nv.label, nv.text, nv.cls),
+          costCell("Desvío", s.isRef ? "0 km" : signedKm(s.detourKm), "neutral")
+        ));
+      }
     }
     return card;
   }
@@ -730,6 +748,8 @@ function loadLS(key, fallback) {
     const box = $("station-body");
     if (!box) return;
     box.replaceChildren();
+    $("sheet-station").dataset.sid = s.id || "";
+    $("sheet-station").dataset.along = opts.along ? "1" : "";
     const status = openStatus(raw["Horario"]);
     box.append(el("div", { class: "detail-head" },
       brandMark(raw["Rótulo"]),
@@ -771,10 +791,13 @@ function loadLS(key, fallback) {
       const row = (k, sub, v, cls = "") => el("div", { class: "cl " + cls }, el("span", {}, k, sub ? el("small", { text: sub }) : null), el("b", { text: v }));
       t.append(row(`Llenar ${String(state.stats.tank).replace(".", ",")} l`, `${fmtPrice(s.price)} €/l`, fmtEuro(s.fill)));
       if (s.disc) t.append(row("Descuento tarjeta", `${s.disc.label} · aprox.`, "−" + fmtEuro((s.official - s.price) * state.stats.tank)));
-      if (s.saveAvg != null) t.append(row("Frente a la media de la zona", `media ${fmtPrice(state.stats.avg)} €/l`, (s.saveAvg >= 0 ? "+" : "−") + fmtEuro(Math.abs(s.saveAvg))));
-      if (s.detourCost != null) t.append(row("Desvío ida y vuelta", `${fmtKm(s.detourKm)} · ${String(state.stats.cons).replace(".", ",")} l/100 km`, "−" + fmtEuro(s.detourCost)));
-      if (s.net != null) t.append(row("Ahorro neto", "", (s.net >= 0 ? "+" : "−") + fmtEuro(Math.abs(s.net)), "total" + (s.net < 0 ? " neg" : "")));
+      if (opts.along || !s.netInfo) {
+        if (s.saveAvg != null) t.append(row(opts.along ? "Frente a la media de la ruta" : "Frente a la media de la zona", `media ${fmtPrice(state.stats.avg)} €/l`, (s.saveAvg >= 0 ? "+" : "−") + fmtEuro(Math.abs(s.saveAvg))));
+        if (s.detourCost != null) t.append(row("Desvío ida y vuelta", `${fmtKm(s.detourKm)} · ${String(state.stats.cons).replace(".", ",")} l/100 km`, "−" + fmtEuro(s.detourCost)));
+        if (s.net != null) t.append(row("Ahorro", "", (s.net >= 0 ? "+" : "−") + fmtEuro(Math.abs(s.net)), "total" + (s.net < 0 ? " neg" : "")));
+      }
       box.append(t);
+      if (!opts.along) box.append(netCard(s, opts));
     }
 
     const others = otherPills(raw, fuel.key);
@@ -1021,6 +1044,7 @@ function loadLS(key, fallback) {
       ));
       return;
     }
+    box.append(refLine());
     const st = state.stats;
     box.append(el("div", { class: "summary" },
       el("span", {}, el("b", { text: String(st.n) }), ` en ${state.radius} km`),
@@ -1053,12 +1077,388 @@ function loadLS(key, fallback) {
     state.stats = state.stats || { tank, cons };
     if (s.price == null) return s;
     s.fill = s.price * tank;
-    s.detourKm = s.dist != null ? s.dist * 2 : null;
-    s.detourCost = s.detourKm != null ? (s.detourKm * cons / 100) * s.price : null;
     const avg = state.stats?.avg;
     s.saveAvg = avg != null ? avg * tank - s.fill : null;
-    s.net = s.saveAvg != null && s.detourCost != null ? s.saveAvg - s.detourCost : s.saveAvg;
+    computeNet(s, state.ref, state.tripO || tripOrigin());
     return s;
+  }
+
+  /* ——— Ahorro neto: casa + gasolinera habitual ———
+     ahorro = (precio ref − precio X) × litros − (km ida y vuelta a X − km a ref) × consumo × precio X */
+  const AWAY_KM = 3, FAR_REF_KM = 60, ROAD_FACTOR = 1.3, ROAD_MAX = 160, ROAD_CHUNK = 80;
+  const OSRM = "https://router.project-osrm.org";
+  const road = new Map(); // "lat,lon|IDEESS" → km ida y vuelta por carretera (null si OSRM no da ruta)
+  let roadBusy = false, roadNext = null, roadDownUntil = 0;
+
+  function findRaw(id) {
+    if (!id) return null;
+    const r = state.raw.find((x) => x.IDEESS === id);
+    if (r) return r;
+    for (const p of state.cache.values()) {
+      const x = p.lista.find((y) => y.IDEESS === id);
+      if (x) return x;
+    }
+    return null;
+  }
+  function tripOrigin() {
+    const h = state.myHome, o = state.origin;
+    if (h) {
+      const away = o ? haversine(h.lat, h.lon, o.lat, o.lon) : 0;
+      if (away <= AWAY_KM) return { lat: h.lat, lon: h.lon, kind: "home" };
+      return { lat: o.lat, lon: o.lon, kind: o.source === "geo" ? "here" : "search", away };
+    }
+    if (o) return { lat: o.lat, lon: o.lon, kind: o.source === "geo" ? "here" : "search" };
+    return null;
+  }
+  function okey(o) { return o.lat.toFixed(4) + "," + o.lon.toFixed(4); }
+  function approxTrip(o, s) { return { km: haversine(o.lat, o.lon, s.lat, s.lon) * 2 * ROAD_FACTOR, road: false }; }
+  function tripKm(o, s) {
+    const k = road.get(okey(o) + "|" + s.id);
+    return k != null ? { km: k, road: true } : approxTrip(o, s);
+  }
+
+  let habitualLoading = false, habitualMissing = false;
+  async function loadHabitual() {
+    const h = state.habitual;
+    if (!h || habitualLoading || habitualMissing) return;
+    habitualLoading = true;
+    try {
+      const ids = h.prov ? [String(h.prov).padStart(2, "0")] : provincesFor(h.lat, h.lon, 1);
+      await Promise.all(ids.map(fetchProvince));
+      if (!findRaw(h.id)) habitualMissing = true;
+    } catch { habitualMissing = true; }
+    habitualLoading = false;
+    if (state.mode === "fuel" && state.raw.length) applyFilters();
+  }
+
+  /* Referencia: tu habitual (aunque esté fuera del radio) o, si no hay, la más cercana con ese carburante */
+  function computeRef(pool, o) {
+    const fuel = fuelOf();
+    const h = state.habitual;
+    let warn = "";
+    if (h) {
+      const raw = findRaw(h.id);
+      if (raw) {
+        const s = enrich(raw, state.origin);
+        if (s.price != null && s.lat != null) return { s, habitual: true, warn };
+        warn = `Tu habitual no vende ${fuel.label}: se compara con la más cercana.`;
+      } else if (habitualMissing) {
+        warn = "Tu habitual ya no aparece en los datos del Ministerio: se compara con la más cercana.";
+      } else {
+        loadHabitual();
+        warn = "Cargando el precio de tu habitual…";
+      }
+    }
+    if (!o || !pool.length) return null;
+    let best = null, bd = Infinity;
+    for (const s of pool) {
+      const d = haversine(o.lat, o.lon, s.lat, s.lon);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best ? { s: best, habitual: false, warn } : null;
+  }
+
+  function computeNet(s, ref, o) {
+    s.netInfo = null; s.isRef = false; s.isHabitual = false;
+    s.net = null; s.detourKm = null; s.detourCost = null;
+    if (!ref || !o || s.price == null || s.lat == null) return s;
+    const litres = Number(state.vehicle.tank) || 70;
+    const cons = Number(state.vehicle.cons) || 6.7;
+    const r = ref.s;
+    const isRef = s.id === r.id;
+    let a = tripKm(o, s), b = tripKm(o, r);
+    if (a.road !== b.road) { a = approxTrip(o, s); b = approxTrip(o, r); } // misma vara de medir para las dos
+    // Habitual muy lejos (más de 60 km ida y vuelta): solo vas cuando pasas por allí, así que su trayecto no cuenta
+    const farRef = b.km > FAR_REF_KM;
+    const extraKm = isRef ? 0 : a.km - (farRef ? 0 : b.km);
+    const diff = r.price - s.price;
+    const fuelGain = diff * litres;
+    const detourCost = extraKm * cons / 100 * s.price;
+    s.isRef = isRef;
+    s.isHabitual = isRef && ref.habitual;
+    s.detourKm = extraKm;
+    s.detourCost = detourCost;
+    s.net = isRef ? 0 : fuelGain - detourCost;
+    s.netInfo = { ref: r, habitual: ref.habitual, warn: ref.warn, diff, litres, cons, fuelGain, extraKm,
+      km: a.km, refKm: b.km, farRef, detourCost, net: s.net, road: a.road && b.road, origin: o };
+    return s;
+  }
+
+  async function roadFetch(o, list) {
+    const ok = okey(o);
+    const pts = [`${o.lon.toFixed(5)},${o.lat.toFixed(5)}`, ...list.map((s) => `${s.lon.toFixed(5)},${s.lat.toFixed(5)}`)].join(";");
+    const base = `${OSRM}/table/v1/driving/${pts}?annotations=distance`;
+    const get = (q) => fetch(base + q).then((r) => (r.ok ? r.json() : null));
+    const [go, back] = await Promise.all([get("&sources=0"), get("&destinations=0")]);
+    if (go?.code !== "Ok" || back?.code !== "Ok") throw new Error("OSRM");
+    list.forEach((s, i) => {
+      const d1 = go.distances?.[0]?.[i + 1], d2 = back.distances?.[i + 1]?.[0];
+      road.set(ok + "|" + s.id, d1 != null && d2 != null ? (d1 + d2) / 1000 : null);
+    });
+  }
+  /* Distancias por carretera en segundo plano: 2 peticiones por tanda de 80, como mucho 160 estaciones, con caché */
+  async function ensureRoad(o, rows, refS) {
+    if (!o || Date.now() < roadDownUntil) return;
+    const ok = okey(o);
+    const has = (s) => road.has(ok + "|" + s.id);
+    const need = [];
+    if (refS && !has(refS)) need.push(refS);
+    const byDist = rows.filter((s) => s.lat != null && !has(s) && (!refS || s.id !== refS.id))
+      .sort((x, y) => haversine(o.lat, o.lon, x.lat, x.lon) - haversine(o.lat, o.lon, y.lat, y.lon));
+    for (const s of byDist) { if (need.length >= ROAD_MAX) break; need.push(s); }
+    if (!need.length) return;
+    if (roadBusy) { roadNext = [o, rows, refS]; return; }
+    roadBusy = true;
+    let got = false;
+    try {
+      for (let i = 0; i < need.length; i += ROAD_CHUNK) {
+        await roadFetch(o, need.slice(i, i + ROAD_CHUNK));
+        got = true;
+      }
+    } catch {
+      roadDownUntil = Date.now() + 60000; // sin OSRM: línea recta × 1,3 y reintento en un minuto
+    }
+    roadBusy = false;
+    const cur = state.tripO;
+    if (got && cur && okey(cur) === ok && state.mode === "fuel" && state.view === "nearby") {
+      const y = window.scrollY;
+      applyFilters();
+      window.scrollTo(0, y);
+      refreshOpenStation();
+    }
+    if (roadNext) { const n = roadNext; roadNext = null; ensureRoad(...n); }
+  }
+  function refreshOpenStation() {
+    const sh = $("sheet-station");
+    const id = sh && sh.classList.contains("is-on") ? sh.dataset.sid : null;
+    if (!id || sh.dataset.along === "1") return;
+    const s = state.filtered.find((x) => x.id === id);
+    if (s) { const top = sh.scrollTop; openStationSheet(s); sh.scrollTop = top; }
+  }
+
+  function fmtEuroSigned(n) {
+    if (n == null) return "—";
+    if (Math.abs(n) < 0.005) return fmtEuro(0);
+    return (n > 0 ? "+" : "−") + fmtEuro(Math.abs(n));
+  }
+  function signedKm(n) {
+    if (n == null) return "—";
+    if (Math.abs(n) < 0.05) return "0 km";
+    return (n > 0 ? "+" : "−") + fmtKm(Math.abs(n));
+  }
+  function netView(s) {
+    const net = s.net;
+    if (net == null) return { label: "Ahorro neto", text: "—", cls: "neutral" };
+    if (s.isRef) return { label: "Ahorro neto", text: s.isHabitual ? "Tu habitual" : "Referencia", cls: "neutral small" };
+    if (Math.abs(net) < 0.005) return { label: "Ahorro neto", text: fmtEuro(0), cls: "neutral" };
+    if (net > 0) return { label: "Ahorro neto", text: "+" + fmtEuro(net), cls: "good" };
+    return { label: "No compensa", text: "−" + fmtEuro(-net), cls: "bad" };
+  }
+  function shortName(raw) {
+    const n = String(raw?.["Rótulo"] || "Gasolinera").trim();
+    return n.length > 22 ? n.slice(0, 21) + "…" : n;
+  }
+  function originText(o) {
+    if (!o) return "";
+    if (o.kind === "home") return "Salida desde casa";
+    const away = o.away != null ? ` (estás a ${fmtKm(o.away)} de casa)` : "";
+    return (o.kind === "here" ? "Salida desde tu ubicación" : "Salida desde el punto buscado") + away;
+  }
+
+  function setHabitual(s) {
+    const raw = s.raw;
+    state.habitual = { id: s.id, rotulo: raw["Rótulo"] || "Gasolinera", addr: formatAddress(raw), lat: s.lat, lon: s.lon, prov: raw["IDProvincia"] || null };
+    habitualMissing = false;
+    saveLS("habitual", state.habitual);
+    haptic(12);
+    toast("Guardada como tu gasolinera habitual");
+  }
+  function clearHabitual() {
+    state.habitual = null;
+    saveLS("habitual", null);
+    haptic();
+  }
+  function setHome(lat, lon, label) {
+    state.myHome = { lat, lon, label: label || `${lat.toFixed(4)}, ${lon.toFixed(4)}` };
+    saveLS("myHome", state.myHome);
+    haptic(12);
+    afterRefChange();
+    if (!label) reverseLabel(lat, lon).then((l) => {
+      if (l && state.myHome && state.myHome.lat === lat && state.myHome.lon === lon) {
+        state.myHome.label = l; saveLS("myHome", state.myHome);
+        if ($("sheet-ref").classList.contains("is-on")) renderRefSheet();
+      }
+    });
+  }
+  function afterRefChange() {
+    if (state.mode === "fuel" && state.raw.length) applyFilters();
+    else renderMap();
+    if ($("sheet-ref").classList.contains("is-on")) renderRefSheet();
+  }
+  async function reverseLabel(lat, lon) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 6000);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat=${lat}&lon=${lon}`, { signal: ctl.signal, headers: { Accept: "application/json" } });
+      if (!r.ok) return null;
+      const d = await r.json();
+      const a = d.address || {};
+      const street = a.road ? a.road + (a.house_number ? " " + a.house_number : "") : "";
+      const place = a.city || a.town || a.village || a.suburb || "";
+      return [street, place].filter(Boolean).join(", ") || null;
+    } catch { return null; } finally { clearTimeout(t); }
+  }
+
+  function homePopup(map, ll) {
+    if (state.mode === "ev") return;
+    const box = el("div", { class: "home-pop" },
+      el("button", { type: "button", class: "btn-primary", onclick: () => { setHome(ll.lat, ll.lng, null); map.closePopup(); toast("Casa guardada"); } },
+        icon("home", 16), "Fijar aquí mi casa")
+    );
+    L.popup({ closeButton: false, offset: [0, -4] }).setLatLng(ll).setContent(box).openOn(map);
+  }
+
+  /* Línea discreta encima de la lista */
+  function refLine() {
+    const ref = state.ref, o = state.tripO;
+    const line = el("button", { type: "button", class: "ref-line", onclick: () => { haptic(); openSheet("sheet-ref"); } }, icon("home", 14));
+    if (!state.habitual && !state.myHome) {
+      line.append(el("span", { text: "Ahorro frente a la más cercana." }), el("b", { text: "Fija tu casa y tu habitual" }));
+    } else if (!state.habitual) {
+      line.append(el("span", { text: "Frente a la más cercana ·" }), el("b", { text: "Elige tu habitual" }));
+    } else {
+      const name = ref?.habitual ? `${shortName(ref.s.raw)} ${fmtPrice(ref.s.price)}` : "tu habitual";
+      line.append(el("span", { text: `Frente a ${name} · ${o?.kind === "home" ? "desde casa" : "desde aquí"}` }));
+      if (!state.myHome) line.append(el("b", { text: "Fija tu casa" }));
+    }
+    line.append(icon("chevron", 14, "ref-chev"));
+    return line;
+  }
+
+  function renderRefRow(id) {
+    const b = $(id);
+    if (!b) return;
+    const parts = [];
+    if (state.myHome) parts.push("Casa fijada");
+    if (state.habitual) parts.push(state.habitual.rotulo);
+    b.replaceChildren(
+      el("span", { class: "ref-ic" }, icon("home", 18)),
+      el("div", {}, el("strong", { text: "Referencia del ahorro" }),
+        el("small", { text: parts.length ? parts.join(" · ") : "Sin fijar: se compara con la más cercana" })),
+      icon("chevron", 16)
+    );
+  }
+
+  /* Ficha: desglose del ahorro neto */
+  function netCard(s, opts) {
+    const info = s.netInfo;
+    const card = el("div", { class: "card cost-card net-card" });
+    const isHab = state.habitual && state.habitual.id === s.id;
+    if (!info) {
+      card.append(el("h3", { class: "block-h", text: "Ahorro neto" }),
+        el("p", { class: "advice-text muted", text: "Activa la ubicación o fija tu casa para calcularlo." }));
+    } else {
+      card.append(el("div", { class: "block-top" },
+        el("h3", { class: "block-h", text: "Ahorro neto" }),
+        el("span", { class: "badge " + (info.habitual ? "hab" : "neutral"), text: info.habitual ? "vs. tu habitual" : "vs. la más cercana" })));
+      const row = (k, sub, v, cls = "") => el("div", { class: "cl " + cls }, el("span", {}, k, sub ? el("small", { text: sub }) : null), el("b", { text: v }));
+      const r = info.ref;
+      if (s.isRef) {
+        card.append(el("p", { class: "advice-text", text: info.habitual
+          ? "Es tu gasolinera habitual: el ahorro de las demás se mide frente a esta."
+          : "Es la más cercana con este carburante: el ahorro de las demás se mide frente a esta." }));
+      } else {
+        const lit = String(info.litres).replace(".", ",");
+        const consT = String(info.cons).replace(".", ",");
+        card.append(
+          row(info.habitual ? "Precio de tu habitual" : "Precio de la más cercana", `${r.raw["Rótulo"] || "Gasolinera"}${r.disc ? " · con tu tarjeta" : ""}`, `${fmtPrice(r.price)} €/l`),
+          row("Precio aquí", s.disc ? "con tu tarjeta" : "", `${fmtPrice(s.price)} €/l`),
+          row("Diferencia × litros", `${info.diff >= 0 ? "" : "−"}${fmtPrice(Math.abs(info.diff))} €/l × ${lit} l`, fmtEuroSigned(info.fuelGain)),
+          row("Desvío extra", `${signedKm(info.extraKm)} ida y vuelta · ${consT} l/100 km a ${fmtPrice(s.price)} €/l`, fmtEuroSigned(-info.detourCost)),
+          row(info.net >= -0.005 ? "Ahorro neto" : "No compensa", "", fmtEuroSigned(info.net), "total" + (info.net < -0.005 ? " neg" : ""))
+        );
+      }
+      const how = info.road ? "por carretera" : "aprox. (línea recta × 1,3)";
+      const foot = el("p", { class: "net-foot" },
+        `${originText(info.origin)} · ida y vuelta ${how}: ${s.isRef ? "" : `aquí ${fmtKm(info.km)}, `}${info.habitual ? "tu habitual" : "la más cercana"} ${fmtKm(info.refKm)}.`);
+      if (info.farRef && !s.isRef) foot.append(` Tu habitual queda lejos de aquí, así que solo se cuenta el trayecto a esta.`);
+      if (info.warn) foot.append(" " + info.warn);
+      if (!state.myHome) foot.append(" ", el("button", { type: "button", class: "text-link", onclick: () => openSheet("sheet-ref") }, "Fijar mi casa"));
+      card.append(foot);
+    }
+    card.append(el("button", {
+      type: "button", class: "btn-ghost hab-btn" + (isHab ? " is-on" : ""),
+      onclick: () => {
+        if (isHab) { clearHabitual(); toast("Ya no es tu habitual"); } else setHabitual(s);
+        applyFilters();
+        const fresh = state.filtered.find((x) => x.id === s.id) || withCosts(enrich(s.raw, state.origin));
+        const sh = $("sheet-station"), top = sh.scrollTop;
+        openStationSheet(fresh, opts);
+        sh.scrollTop = top;
+      }
+    }, icon(isHab ? "check" : "fuel", 16), isHab ? "Es tu habitual · quitar" : "Marcar como habitual"));
+    return card;
+  }
+
+  /* Hoja «Referencia del ahorro» */
+  function renderRefSheet() {
+    const box = $("ref-body");
+    box.replaceChildren();
+    const h = state.myHome;
+    box.append(el("label", { class: "sheet-label", text: "Mi casa" }));
+    box.append(el("div", { class: "group" },
+      el("div", { class: "set" },
+        el("div", { class: "set-main" }, el("span", { class: "ref-ic" }, icon("home", 17)),
+          el("div", {}, el("strong", { text: h ? h.label : "Sin fijar" }),
+            el("small", { text: h ? "Desde aquí se cuentan los kilómetros del desvío" : "Se usará tu ubicación actual" }))),
+        h ? el("button", { type: "button", class: "text-link", onclick: () => { state.myHome = null; saveLS("myHome", null); haptic(); afterRefChange(); } }, "Quitar") : null
+      )
+    ));
+    const q = el("input", { type: "search", id: "ref-home-q", placeholder: "Buscar la dirección de casa", autocomplete: "off", enterkeyhint: "search" });
+    const sug = el("ul", { class: "suggest", id: "ref-suggest", hidden: true });
+    let tmr = 0, seq = 0;
+    const pick = (it) => { setHome(it.lat, it.lon, it.label); toast("Casa guardada"); };
+    q.addEventListener("input", () => {
+      clearTimeout(tmr);
+      const v = q.value.trim(), my = ++seq;
+      if (v.length < 3) { sug.hidden = true; return; }
+      tmr = setTimeout(async () => { const items = await geocodeFree(v); if (my === seq) showSuggest(items, sug, pick); }, 320);
+    });
+    q.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const items = await geocodeFree(q.value.trim());
+      if (items[0]) pick(items[0]); else toast("No encuentro esa dirección");
+    });
+    const useHere = el("button", { type: "button", class: "btn-ghost", onclick: () => {
+      haptic();
+      if (!navigator.geolocation) { toast("Este navegador no ofrece ubicación"); return; }
+      toast("Obteniendo ubicación…");
+      navigator.geolocation.getCurrentPosition(
+        (p) => { setHome(p.coords.latitude, p.coords.longitude, null); toast("Casa guardada"); },
+        () => toast("No se ha podido obtener la ubicación"),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+    } }, icon("locate", 16), "Estoy en casa");
+    box.append(el("div", { class: "ref-search" }, q, sug), el("div", { class: "actions-row" }, useHere),
+      el("p", { class: "note sheet-note", text: "También puedes mantener pulsado el mapa sobre tu casa." }));
+
+    const hb = state.habitual;
+    box.append(el("label", { class: "sheet-label", text: "Gasolinera habitual" }));
+    let price = null;
+    if (hb) { const raw = findRaw(hb.id); if (raw) price = enrich(raw, state.origin).price; }
+    box.append(el("div", { class: "group" },
+      el("div", { class: "set" },
+        el("div", { class: "set-main" }, hb ? brandMark(hb.rotulo) : el("span", { class: "ref-ic" }, icon("fuel", 17)),
+          el("div", {}, el("strong", { text: hb ? hb.rotulo : "Sin elegir" }),
+            el("small", { text: hb ? (hb.addr || "") : "Abre una gasolinera de la lista y pulsa «Marcar como habitual»" }))),
+        hb ? el("div", { class: "set-end" },
+          price != null ? el("b", { text: fmtPrice(price) }) : null,
+          el("button", { type: "button", class: "text-link", onclick: () => { clearHabitual(); afterRefChange(); } }, "Quitar")) : null
+      )
+    ));
+    box.append(el("label", { class: "sheet-label", text: "Cómo se calcula" }),
+      el("p", { class: "note sheet-note", text: "Ahorro neto = (precio de tu habitual − precio de la otra) × litros del depósito − lo que gastas en los kilómetros de más, ida y vuelta, para ir a la otra. Se cuenta desde casa; si estás a más de 3 km, desde donde estés. Sin habitual, se compara con la más cercana. Los descuentos de tus tarjetas ya van incluidos." }),
+      el("div", { class: "actions-row" }, el("button", { type: "button", class: "btn-primary", onclick: () => closeSheets() }, "Listo")));
   }
 
   /* ——— map ——— */
@@ -1101,6 +1501,7 @@ function loadLS(key, fallback) {
     const map = L.map(id, { zoomControl: true, attributionControl: true });
     attachTiles(map, which);
     if (which === "main") {
+      map.on("contextmenu", (e) => homePopup(map, e.latlng));
       const legend = L.control({ position: "bottomright" });
       legend.onAdd = () => {
         const d = L.DomUtil.create("div", "legend");
@@ -1174,6 +1575,11 @@ function loadLS(key, fallback) {
     if (state.origin) {
       const icon = L.divIcon({ className: "", html: '<div class="user-pin"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
       state.maps.mainUser = L.marker([state.origin.lat, state.origin.lon], { icon, zIndexOffset: 1000, title: "Tu punto de búsqueda" }).addTo(map);
+    }
+    if (state.maps.mainHome) { try { map.removeLayer(state.maps.mainHome); } catch {} state.maps.mainHome = null; }
+    if (state.myHome) {
+      const hi = L.divIcon({ className: "", html: `<div class="home-pin">${iconHTML("home", 15)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+      state.maps.mainHome = L.marker([state.myHome.lat, state.myHome.lon], { icon: hi, title: "Mi casa", zIndexOffset: 900 }).addTo(map);
     }
     const pts = ev ? list.map((x) => [x.la, x.lo]) : list.map((s) => [s.lat, s.lon]);
     if (state.origin) pts.push([state.origin.lat, state.origin.lon]);
@@ -1856,8 +2262,9 @@ function loadLS(key, fallback) {
     $("backdrop").classList.add("is-on");
     requestAnimationFrame(() => s.classList.add("is-on"));
     haptic(6);
-    if (id === "sheet-filters") renderFilterSheet();
-    if (id === "sheet-vehicle") renderVehicleSheet();
+    if (id === "sheet-filters") { renderFilterSheet(); renderRefRow("btn-filt-ref"); }
+    if (id === "sheet-vehicle") { renderVehicleSheet(); renderRefRow("btn-veh-ref"); }
+    if (id === "sheet-ref") renderRefSheet();
     if (id === "sheet-alerts") { renderAlertFields(); renderFavList(); renderHistoryBox(); }
     if (id === "sheet-log") {
       $("log-date").value = todayISO();
@@ -2423,6 +2830,7 @@ function loadLS(key, fallback) {
       b.addEventListener("click", () => applyTheme(b.dataset.themePick));
     });
     $("btn-vehicle").addEventListener("click", () => openSheet("sheet-vehicle"));
+    for (const id of ["btn-veh-ref", "btn-filt-ref"]) $(id).addEventListener("click", () => { haptic(); openSheet("sheet-ref"); });
     $("btn-alerts").addEventListener("click", () => openSheet("sheet-alerts"));
     $("btn-veh-save").addEventListener("click", saveVehicle);
     $("veh-make-filter").addEventListener("input", renderVehicleSheet);
@@ -2554,6 +2962,8 @@ function loadLS(key, fallback) {
     state.history = loadLS("history", {}) || {};
     state.log = loadLS("log", []) || [];
     state.cards = loadLS("cards", {}) || {};
+    state.myHome = loadLS("myHome", null);
+    state.habitual = loadLS("habitual", null);
     state.openF = loadLS("openF", "any") || "any";
     state.mode = loadLS("mode", "fuel") === "ev" ? "ev" : "fuel";
     state.ev.minKw = Number(loadLS("evMinKw", 0)) || 0;

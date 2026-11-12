@@ -168,6 +168,9 @@
       <button type="button" class="seg-btn is-active" data-evsort="distance">Distancia</button>
       <button type="button" class="seg-btn" data-evsort="power">Potencia</button>
     </div>
+    <div data-mode-only="fuel">
+      <button type="button" class="group ref-row" id="btn-filt-ref" aria-haspopup="dialog"></button>
+    </div>
     <label class="sheet-label">Horario</label>
     <div class="seg seg-wide" role="group" aria-label="Horario">
       <button type="button" class="seg-btn is-active" data-open="any">Todas</button>
@@ -262,11 +265,21 @@
       </div>
     </div>
     <p class="note" id="veh-note"></p>
+    <label class="sheet-label" style="margin-top:18px">Ahorro neto</label>
+    <button type="button" class="group ref-row" id="btn-veh-ref" aria-haspopup="dialog"></button>
     </div>
     <div class="actions-row">
       <button type="button" class="btn-primary" id="btn-veh-save">Guardar</button>
       <button type="button" class="btn-ghost" data-close>Cerrar</button>
     </div>
+  </div>
+
+  <div class="sheet" id="sheet-ref" role="dialog" aria-labelledby="ref-title" hidden>
+    <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+    <h2 id="ref-title">Referencia del ahorro</h2>
+    <p class="lead">El ahorro neto compara cada gasolinera con la tuya de siempre y descuenta los kilómetros de más. Se guarda en este dispositivo.</p>
+    <div id="ref-body"></div>
   </div>
 
   <div class="sheet" id="sheet-alerts" role="dialog" aria-labelledby="al-title" hidden>
