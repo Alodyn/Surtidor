@@ -1,4 +1,4 @@
-const SHELL = "surtidor-shell-v2";
+const SHELL = "surtidor-shell-v3";
 const DATA = "surtidor-data-v1";
 const PRECACHE = [
   "./",

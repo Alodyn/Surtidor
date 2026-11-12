@@ -1408,19 +1408,21 @@ function loadLS(key, fallback) {
     const box = $("radii");
     box.replaceChildren();
     for (const r of RADII) {
-      box.append(el("button", {
+      const b = el("button", {
         type: "button",
         class: "chip" + (r === state.radius ? " is-active" : ""),
         onclick: async () => {
           state.radius = r;
           state.maps.fitted = false;
           saveLS("radius", r);
+          box.querySelectorAll(".chip").forEach((c) => c.classList.toggle("is-active", c === b));
           updateFiltersLabel();
           if (state.origin) {
             await loadAround(state.origin.lat, state.origin.lon, r);
           } else applyFilters();
         }
-      }, r + " km"));
+      }, r + " km");
+      box.append(b);
     }
   }
 
