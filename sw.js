@@ -1,5 +1,5 @@
-const SHELL = "surtidor-shell-v3";
-const DATA = "surtidor-data-v1";
+const SHELL = "surtidor-shell-v4";
+const DATA = "surtidor-data-v2";
 const PRECACHE = [
   "./",
   "./index.html",
@@ -8,9 +8,11 @@ const PRECACHE = [
   "./places.json",
   "./vehicles.json",
   "./manifest.webmanifest",
+  "./ev/meta.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icons/apple-touch-icon.png",
+  "./icons/icon-512-maskable.png"
 ];
 
 self.addEventListener("install", (e) => {
@@ -30,7 +32,9 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   const isApi = url.hostname.includes("minetur.gob.es") || url.hostname.includes("serviciosmin.gob.es");
-  if (isApi) {
+  // Puntos de recarga (ev/): red primero para coger el registro del día; caché si no hay conexión
+  const isEv = url.origin === location.origin && url.pathname.includes("/ev/");
+  if (isApi || isEv) {
     e.respondWith(networkFirst(req, DATA));
     return;
   }

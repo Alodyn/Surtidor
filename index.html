@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="description" content="Precios oficiales de carburantes en las gasolineras cercanas. Datos del Ministerio.">
+  <meta name="description" content="Precios oficiales de carburantes y puntos de recarga cercanos. Datos del Ministerio.">
   <title>Surtidor · Gasolineras cercanas</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -55,17 +55,17 @@
     <section id="view-nearby" class="view is-active">
       <section class="locator">
         <form class="search-form" id="search-form" autocomplete="off">
-          <label class="sr-only" for="search-input">Localidad o código postal</label>
+          <label class="sr-only" for="search-input">Ciudad, dirección o código postal</label>
           <div class="search-wrap">
             <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.4-3.4"/></svg>
-            <input id="search-input" type="search" placeholder="Localidad o código postal" enterkeyhint="search">
+            <input id="search-input" type="search" placeholder="Ciudad, dirección o CP" enterkeyhint="search">
             <button type="button" class="icon-btn locate-btn" id="btn-locate" title="Usar mi ubicación" aria-label="Usar mi ubicación">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21"/><circle cx="12" cy="12" r="7.5"/></svg>
             </button>
           </div>
           <ul class="suggest" id="suggest" hidden></ul>
         </form>
-        <p class="place-line" id="place-line">Activa la ubicación o busca un pueblo o un código postal.</p>
+        <p class="place-line" id="place-line">Activa la ubicación o busca otra zona.</p>
       </section>
 
       <div class="fuel-bar" id="fuel-bar">
@@ -153,21 +153,45 @@
 
   <div class="sheet" id="sheet-filters" role="dialog" aria-labelledby="filt-title" hidden>
     <div class="sheet-handle"></div>
-    <button type="button" class="sheet-close" data-close title="Cerrar">✕</button>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="filt-title">Filtros</h2>
-    <p class="lead">Radio, orden y visibilidad.</p>
+    <p class="lead" id="filt-lead">Radio, orden, horario y tus tarjetas de descuento.</p>
     <label class="sheet-label">Radio</label>
     <div class="radii" role="group" aria-label="Radio de búsqueda" id="radii"></div>
     <label class="sheet-label">Ordenar por</label>
-    <div class="seg seg-wide" role="group" aria-label="Ordenar">
+    <div class="seg seg-wide" role="group" aria-label="Ordenar" data-mode-only="fuel">
       <button type="button" class="seg-btn is-active" data-sort="price">Precio</button>
       <button type="button" class="seg-btn" data-sort="distance">Distancia</button>
       <button type="button" class="seg-btn" data-sort="net">Ahorro neto</button>
     </div>
-    <label class="sheet-label">Mostrar</label>
-    <div class="filter-toggles">
-      <label class="toggle"><input type="checkbox" id="only-public" checked><span>Solo venta al público</span></label>
-      <label class="toggle"><input type="checkbox" id="only-favs"><span>Solo favoritas</span></label>
+    <div class="seg seg-wide" role="group" aria-label="Ordenar" data-mode-only="ev" hidden>
+      <button type="button" class="seg-btn is-active" data-evsort="distance">Distancia</button>
+      <button type="button" class="seg-btn" data-evsort="power">Potencia</button>
+    </div>
+    <label class="sheet-label">Horario</label>
+    <div class="seg seg-wide" role="group" aria-label="Horario">
+      <button type="button" class="seg-btn is-active" data-open="any">Todas</button>
+      <button type="button" class="seg-btn" data-open="now">Abiertas</button>
+      <button type="button" class="seg-btn" data-open="24h">24 horas</button>
+    </div>
+    <div data-mode-only="ev" hidden>
+      <label class="sheet-label">Potencia mínima</label>
+      <div class="radii" role="group" aria-label="Potencia mínima" id="ev-kw"></div>
+      <label class="sheet-label">Conector</label>
+      <div class="radii" role="group" aria-label="Conector" id="ev-conn"></div>
+      <div class="filter-toggles">
+        <label class="toggle"><input type="checkbox" id="ev-parking"><span>Solo aparcamientos con carga</span></label>
+      </div>
+    </div>
+    <div data-mode-only="fuel">
+      <label class="sheet-label">Tarjetas de descuento</label>
+      <div class="group" id="loyalty"></div>
+      <p class="note sheet-note">Céntimos por litro aproximados: cada tarjeta y promoción cambia, ajústalos a la tuya. Se restan del precio oficial de esa marca y cambian el orden de la lista.</p>
+      <label class="sheet-label">Mostrar</label>
+      <div class="filter-toggles">
+        <label class="toggle"><input type="checkbox" id="only-public" checked><span>Solo venta al público</span></label>
+        <label class="toggle"><input type="checkbox" id="only-favs"><span>Solo favoritas</span></label>
+      </div>
     </div>
     <label class="sheet-label">Apariencia</label>
     <div class="theme-picks" role="radiogroup" aria-label="Tema visual">
@@ -191,15 +215,29 @@
 
   <div class="sheet" id="sheet-station" role="dialog" aria-labelledby="st-title" hidden>
     <div class="sheet-handle"></div>
-    <button type="button" class="sheet-close" data-close title="Cerrar">✕</button>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <div id="station-body"></div>
   </div>
 
   <div class="sheet" id="sheet-vehicle" role="dialog" aria-labelledby="veh-title" hidden>
     <div class="sheet-handle"></div>
-    <button type="button" class="sheet-close" data-close title="Cerrar">✕</button>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="veh-title">Tu coche y el depósito</h2>
-    <p class="lead">Marca, modelo y motor, o litros y consumo a mano. Se guarda en este dispositivo.</p>
+    <p class="lead">Marca, modelo y motor, o los datos a mano. Se guarda en este dispositivo.</p>
+    <div class="seg seg-wide" role="group" aria-label="Tipo de coche">
+      <button type="button" class="seg-btn is-active" data-vkind="ice">Combustión</button>
+      <button type="button" class="seg-btn" data-vkind="ev">Eléctrico</button>
+    </div>
+    <div id="veh-ev" hidden>
+      <div class="form-grid two">
+        <div><label for="veh-kwh">Batería útil (kWh)</label><input id="veh-kwh" type="number" min="10" max="200" step="0.5" inputmode="decimal"></div>
+        <div><label for="veh-kwhcons">Consumo (kWh/100 km)</label><input id="veh-kwhcons" type="number" min="8" max="40" step="0.1" inputmode="decimal"></div>
+        <div><label for="veh-dc">Carga rápida máx. (kW)</label><input id="veh-dc" type="number" min="20" max="400" step="1" inputmode="numeric"></div>
+        <div><label for="veh-ac">Carga en alterna (kW)</label><input id="veh-ac" type="number" min="2" max="22" step="0.1" inputmode="decimal"></div>
+      </div>
+      <p class="note">Valores por defecto de un eléctrico compacto típico (60 kWh, 16 kWh/100 km, 100 kW en rápida, 11 kW en alterna). Cámbialos por los de tu coche. Al guardar, la app pasa a mostrar puntos de recarga.</p>
+    </div>
+    <div id="veh-ice">
     <div class="form-grid two">
       <div>
         <label>Marca</label>
@@ -224,6 +262,7 @@
       </div>
     </div>
     <p class="note" id="veh-note"></p>
+    </div>
     <div class="actions-row">
       <button type="button" class="btn-primary" id="btn-veh-save">Guardar</button>
       <button type="button" class="btn-ghost" data-close>Cerrar</button>
@@ -232,7 +271,7 @@
 
   <div class="sheet" id="sheet-alerts" role="dialog" aria-labelledby="al-title" hidden>
     <div class="sheet-handle"></div>
-    <button type="button" class="sheet-close" data-close title="Cerrar">✕</button>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="al-title">Favoritas y alertas</h2>
     <p class="lead">Marca un precio máximo por carburante. Al abrir la app te avisamos si una favorita está por debajo. Las notificaciones push de verdad necesitan un servidor; aquí el aviso es en la propia app (y, si el navegador lo permite, una notificación local).</p>
     <div id="alert-fields" class="form-grid"></div>
@@ -246,7 +285,7 @@
 
   <div class="sheet" id="sheet-log" role="dialog" aria-labelledby="log-title" hidden>
     <div class="sheet-handle"></div>
-    <button type="button" class="sheet-close" data-close title="Cerrar">✕</button>
+    <button type="button" class="sheet-close" data-close title="Cerrar" aria-label="Cerrar"><svg viewBox="0 0 24 24" width="16" height="16" class="ic" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="log-title">Nuevo repostaje</h2>
     <div class="form-grid">
       <div>

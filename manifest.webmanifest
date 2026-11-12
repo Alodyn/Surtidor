@@ -1,7 +1,7 @@
 {
   "name": "Surtidor · Gasolineras cercanas",
   "short_name": "Surtidor",
-  "description": "Precios oficiales de carburantes en las gasolineras cercanas. Datos del Ministerio.",
+  "description": "Precios oficiales de carburantes y puntos de recarga cercanos. Datos del Ministerio.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -10,8 +10,75 @@
   "theme_color": "#e4e8f2",
   "lang": "es",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mi gasolinera favorita",
+      "short_name": "Favorita",
+      "description": "Abre tu primera favorita con su precio de hoy",
+      "url": "./?fav=1",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Puntos de recarga cercanos",
+      "short_name": "Recarga",
+      "description": "Cargadores eléctricos y Superchargers cerca",
+      "url": "./?mode=ev",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Gasolineras en la ruta",
+      "short_name": "Ruta",
+      "url": "./?view=route",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Diario de repostajes",
+      "short_name": "Diario",
+      "url": "./?view=log",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }
