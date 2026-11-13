@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-12T10:26:21+00:00",
- "napPublicationTime": "2026-11-12T10:17:10.147+01:00",
+ "generated": "2026-11-13T12:56:47+00:00",
+ "napPublicationTime": "2026-11-13T10:16:25.793+01:00",
  "tile": 0.5,
  "tiles": [
   "27.5_-15.5",
@@ -278,8 +278,8 @@
  ],
  "sites": 12140,
  "points": 36191,
- "superchargers": 105,
- "superchargersMatched": 79,
+ "superchargers": 104,
+ "superchargersMatched": 78,
  "sources": [
   "https://nap.dgt.es/datex2/v3/miterd/EnergyInfrastructureTablePublication/electrolineras.xml",
   "https://supercharge.info/service/supercharge/allSites"
