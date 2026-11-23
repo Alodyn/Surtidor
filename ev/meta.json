@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-22T13:11:34+00:00",
- "napPublicationTime": "2026-11-22T10:16:29.086+01:00",
+ "generated": "2026-11-23T15:48:33+00:00",
+ "napPublicationTime": "2026-11-23T10:16:43.374+01:00",
  "tile": 0.5,
  "tiles": [
   "27.5_-15.5",
@@ -276,8 +276,8 @@
   "43_-9",
   "43_-9.5"
  ],
- "sites": 12172,
- "points": 36284,
+ "sites": 12176,
+ "points": 36338,
  "superchargers": 103,
  "superchargersMatched": 77,
  "sources": [
